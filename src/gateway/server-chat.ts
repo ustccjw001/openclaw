@@ -241,7 +241,13 @@ type BroadcastDelta = { deltaText: string; replace?: true };
 function resolveBroadcastDelta(params: {
   text: string;
   previousBroadcastText: string | undefined;
+  replace?: boolean;
 }): BroadcastDelta | undefined {
+  if (params.replace) {
+    return params.text === params.previousBroadcastText
+      ? undefined
+      : { deltaText: params.text, replace: true };
+  }
   if (!params.text) {
     return undefined;
   }
@@ -794,15 +800,16 @@ export function createAgentEventHandler({
     seq: number,
     text: string,
     delta?: unknown,
-    opts?: { controlUiVisible?: boolean },
+    opts?: { controlUiVisible?: boolean; replace?: boolean },
   ) => {
     const previousRawText = chatRunState.rawBuffers.get(clientRunId) ?? "";
     const mergedRawText = resolveMergedAssistantText({
       previousText: previousRawText,
       nextText: text,
       nextDelta: typeof delta === "string" ? delta : "",
+      replace: opts?.replace,
     });
-    if (!mergedRawText) {
+    if (!mergedRawText && !opts?.replace) {
       return;
     }
     const now = Date.now();
@@ -814,19 +821,21 @@ export function createAgentEventHandler({
     const projected = projectLiveAssistantBufferedText(normalizedText);
     const mergedText = projected.text;
     chatRunState.buffers.set(clientRunId, mergedText);
-    if (projected.suppress) {
+    const clearsVisibleText = opts?.replace === true && mergedText.length === 0;
+    if (projected.suppress && !clearsVisibleText) {
       return;
     }
     if (shouldHideHeartbeatChatOutput(clientRunId, sourceRunId)) {
       return;
     }
     const last = chatRunState.deltaSentAt.get(clientRunId) ?? 0;
-    if (now - last < 150) {
+    if (!opts?.replace && now - last < 150) {
       return;
     }
     const broadcastDelta = resolveBroadcastDelta({
       text: mergedText,
       previousBroadcastText: chatRunState.deltaLastBroadcastText.get(clientRunId),
+      replace: opts?.replace,
     });
     if (!broadcastDelta) {
       return;
@@ -1467,6 +1476,7 @@ export function createAgentEventHandler({
           assistantLiveChatInput.delta,
           {
             controlUiVisible: isControlUiVisible,
+            replace: assistantLiveChatInput.replace,
           },
         );
       }

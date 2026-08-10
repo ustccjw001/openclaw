@@ -15,6 +15,7 @@ const SessionsYieldToolSchema = Type.Object({
 export function createSessionsYieldTool(opts?: {
   sessionId?: string;
   onYield?: (message: string) => Promise<void> | void;
+  hasPendingSubagents?: () => boolean;
 }): AnyAgentTool {
   return {
     label: "Yield",
@@ -29,6 +30,12 @@ export function createSessionsYieldTool(opts?: {
       }
       if (!opts?.onYield) {
         return jsonResult({ status: "error", error: "Yield not supported in this context" });
+      }
+      if (opts.hasPendingSubagents?.() === false) {
+        return jsonResult({
+          status: "no_pending_subagents",
+          message: "No pending subagents remain. Continue this turn and send the final response.",
+        });
       }
       // The runtime owns the actual pause/end-turn behavior; this tool records intent.
       await opts.onYield(message);

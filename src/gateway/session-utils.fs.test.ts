@@ -27,6 +27,7 @@ import {
   readRecentSessionTranscriptLines,
   readSessionMessageCountAsync,
   readSessionMessageCount,
+  readSessionMessagesPageWithStatsAsync,
   readSessionMessagesAsync,
   readSessionMessages,
   readSessionTitleFieldsFromTranscript,
@@ -906,6 +907,83 @@ describe("readSessionMessages", () => {
       sessionManagerOpenSpy.mockRestore();
       readFileSpy.mockRestore();
     }
+  });
+
+  test("adds sessions_yield side continuations only to the display history view", async () => {
+    const sessionId = "test-session-yield-display-tree";
+    writeTranscript(tmpDir, sessionId, [
+      { type: "session", version: 3, id: sessionId },
+      {
+        type: "message",
+        id: "user-1",
+        parentId: null,
+        message: { role: "user", content: "delegate work" },
+      },
+      {
+        type: "custom_message",
+        id: "yield-root",
+        parentId: "user-1",
+        customType: "openclaw.sessions_yield",
+        content: "wait",
+        display: false,
+      },
+      {
+        type: "message",
+        id: "progress-1",
+        parentId: "yield-root",
+        message: { role: "assistant", content: "first report", stopReason: "toolUse" },
+      },
+      {
+        type: "message",
+        id: "yield-result-1",
+        parentId: "progress-1",
+        message: { role: "toolResult", content: "waiting" },
+      },
+      {
+        type: "custom_message",
+        id: "yield-next",
+        parentId: "yield-result-1",
+        customType: "openclaw.sessions_yield",
+        content: "wait again",
+        display: false,
+      },
+      {
+        type: "leaf",
+        id: "restore-yield-root",
+        parentId: "yield-next",
+        targetId: "yield-root",
+        appendParentId: "yield-next",
+        appendMode: "side",
+      },
+    ]);
+
+    const active = await readRecentSessionMessagesAsync(sessionId, storePath, undefined, {
+      maxMessages: 20,
+    });
+    const display = await readRecentSessionMessagesAsync(sessionId, storePath, undefined, {
+      maxMessages: 20,
+      view: "display",
+    });
+
+    expect(JSON.stringify(active)).not.toContain("first report");
+    expect(JSON.stringify(display)).toContain("first report");
+    expect(JSON.stringify(display)).toContain("waiting");
+
+    const activePage = await readSessionMessagesPageWithStatsAsync(
+      sessionId,
+      storePath,
+      undefined,
+      { offset: 0, maxMessages: 20 },
+    );
+    const displayPage = await readSessionMessagesPageWithStatsAsync(
+      sessionId,
+      storePath,
+      undefined,
+      { offset: 0, maxMessages: 20, view: "display" },
+    );
+    expect(JSON.stringify(activePage.messages)).not.toContain("first report");
+    expect(JSON.stringify(displayPage.messages)).toContain("first report");
+    expect(displayPage.totalMessages).toBeGreaterThan(activePage.totalMessages);
   });
 
   test("supports file-wide identity lookup without exposing side branches to history", async () => {

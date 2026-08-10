@@ -221,6 +221,7 @@ import { detectRuntimeShell } from "../../shell-utils.js";
 import { buildActiveSubagentSystemPromptAddition } from "../../subagent-active-context.js";
 import {
   ackPendingAgentSteeringItems,
+  countActiveDescendantRuns,
   leasePendingAgentSteeringItems,
   prependAgentSteeringPrompt,
   releasePendingAgentSteeringItems,
@@ -1447,6 +1448,7 @@ export async function runEmbeddedAttempt(
               runAbortController.abort("sessions_yield");
               abortSessionForYield?.();
             },
+            hasPendingSubagents: () => countActiveDescendantRuns(params.sessionKey) > 0,
           });
           corePluginToolStages.mark("attempt:create-openclaw-coding-tools");
           const filteredTools = applyEmbeddedAttemptToolsAllow(allTools, effectiveToolsAllow, {

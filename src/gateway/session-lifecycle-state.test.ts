@@ -135,6 +135,49 @@ describe("session lifecycle state", () => {
     });
   });
 
+  it("keeps a yielded turn running until its continuation starts", () => {
+    expect(
+      deriveGatewaySessionLifecycleSnapshot({
+        session: {
+          updatedAt: 1_000,
+          status: "running",
+          startedAt: 1_050,
+        },
+        event: {
+          ts: 2_000,
+          data: {
+            phase: "end",
+            endedAt: 1_800,
+            yielded: true,
+            livenessState: "paused",
+            stopReason: "end_turn",
+          },
+        },
+      }),
+    ).toMatchObject({
+      status: "running",
+      endedAt: 1_800,
+      runtimeMs: 750,
+      abortedLastRun: false,
+    });
+  });
+
+  it("does not treat paused liveness without an explicit yield as pending", () => {
+    expect(
+      deriveGatewaySessionLifecycleSnapshot({
+        session: {
+          updatedAt: 1_000,
+          status: "running",
+          startedAt: 1_050,
+        },
+        event: {
+          ts: 2_000,
+          data: { phase: "end", endedAt: 1_800, livenessState: "paused" },
+        },
+      }).status,
+    ).toBe("done");
+  });
+
   it("maps aborted stop reasons to killed", () => {
     expectPersistedLifecyclePatch({
       entry: { startedAt: 1_100 },

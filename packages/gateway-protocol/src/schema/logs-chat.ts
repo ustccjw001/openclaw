@@ -163,6 +163,7 @@ export const ChatFinalEventSchema = Type.Object(
     message: Type.Optional(Type.Unknown()),
     usage: Type.Optional(Type.Unknown()),
     stopReason: Type.Optional(Type.String()),
+    yielded: Type.Optional(Type.Literal(true)),
   },
   { additionalProperties: false },
 );

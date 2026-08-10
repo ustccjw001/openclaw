@@ -44,6 +44,20 @@ describe("sessions_yield tool", () => {
     expect(onYield).toHaveBeenCalledWith("Waiting for fact-checker");
   });
 
+  it("keeps the current turn alive when no subagents remain", async () => {
+    const onYield = vi.fn();
+    const tool = createSessionsYieldTool({
+      sessionId: "test-session",
+      onYield,
+      hasPendingSubagents: () => false,
+    });
+    const result = await tool.execute("call-1", { message: "Waiting for completed work" });
+    const details = result.details as SessionsYieldDetails;
+    expect(details.status).toBe("no_pending_subagents");
+    expect(details.message).toContain("send the final response");
+    expect(onYield).not.toHaveBeenCalled();
+  });
+
   it("returns error without onYield callback", async () => {
     const tool = createSessionsYieldTool({ sessionId: "test-session" });
     const result = await tool.execute("call-1", {});

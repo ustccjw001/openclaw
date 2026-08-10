@@ -3018,11 +3018,13 @@ async function readChatHistoryPage(params: {
             maxLines: rawHistoryWindow.maxLines + 1,
             maxBytes: Math.max(maxHistoryBytes * 2, 1024 * 1024),
             allowResetArchiveFallback: true,
+            view: "display",
           })
         : await readSessionMessagesPageWithStatsAsync(readScope, {
             offset,
             maxMessages: max + 1,
             allowResetArchiveFallback: true,
+            view: "display",
           });
     const overreadContextMessage =
       offset === 0
@@ -3086,6 +3088,7 @@ async function readChatHistoryPage(params: {
     ...localHistoryReadOptions,
     maxBytes: Math.max(maxHistoryBytes * 2, 1024 * 1024),
     allowResetArchiveFallback: true,
+    view: "display",
   });
   const overreadContextMessage =
     localMessages.length > rawHistoryWindow.maxMessages ? localMessages[0] : undefined;

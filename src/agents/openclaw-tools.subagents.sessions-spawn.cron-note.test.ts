@@ -35,6 +35,12 @@ describe("sessions_spawn: cron isolated session note suppression", () => {
     expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain(
       "only answer after completion events for ALL required children arrive",
     );
+    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain(
+      "Interim progress updates and intentionally yielded turns are not final answers",
+    );
+    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain(
+      "synthesize and send the requested final deliverable",
+    );
     expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).not.toContain("sessions_yield");
   });
 

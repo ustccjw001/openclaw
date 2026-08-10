@@ -191,6 +191,8 @@ export function createOpenClawTools(
     spawnWorkspaceDir?: string;
     /** Callback invoked when sessions_yield tool is called. */
     onYield?: (message: string) => Promise<void> | void;
+    /** Runtime-owned check that prevents yielding after all descendants settle. */
+    hasPendingSubagents?: () => boolean;
     /** Allow plugin tools for this tool set to late-bind the gateway subagent. */
     allowGatewaySubagentBinding?: boolean;
   } & SpawnedToolContext,
@@ -549,6 +551,7 @@ export function createOpenClawTools(
     createSessionsYieldTool({
       sessionId: options?.sessionId,
       onYield: options?.onYield,
+      hasPendingSubagents: options?.hasPendingSubagents,
     }),
     createSubagentsTool({
       agentSessionKey: options?.agentSessionKey,

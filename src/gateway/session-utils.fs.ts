@@ -24,6 +24,7 @@ import { estimateStringChars, estimateTokensFromChars } from "../utils/cjk-chars
 import { stripInlineDirectiveTagsForDisplay } from "../utils/directive-tags.js";
 import { extractToolCallNames, hasToolCall } from "../utils/transcript-tools.js";
 import { stripEnvelope } from "./chat-sanitize.js";
+import { selectChatDisplayTranscriptEntries } from "./session-transcript-display.fs.js";
 import {
   resolveSessionTranscriptCandidates,
   resolveSessionTranscriptResetArchiveCandidatesAsync,
@@ -192,12 +193,14 @@ export type ReadRecentSessionMessagesOptions = {
   maxBytes?: number;
   maxLines?: number;
   allowResetArchiveFallback?: boolean;
+  view?: "active" | "display";
 };
 
 export type ReadSessionMessagesPageOptions = {
   offset: number;
   maxMessages: number;
   allowResetArchiveFallback?: boolean;
+  view?: "active" | "display";
 };
 
 export type ReadSessionMessagesAsyncOptions =
@@ -235,7 +238,7 @@ function normalizeRecentSessionReadOptions(opts?: Partial<ReadRecentSessionMessa
   const maxLines = resolveIntegerOption(opts?.maxLines, maxMessages * 20 + 20, {
     min: maxMessages,
   });
-  return { maxMessages, maxBytes, maxLines };
+  return { maxMessages, maxBytes, maxLines, view: opts?.view ?? "active" };
 }
 
 export function readRecentSessionMessages(
@@ -245,7 +248,7 @@ export function readRecentSessionMessages(
   opts?: ReadRecentSessionMessagesOptions,
   agentId?: string,
 ): unknown[] {
-  const { maxMessages, maxBytes, maxLines } = normalizeRecentSessionReadOptions(opts);
+  const { maxMessages, maxBytes, maxLines, view } = normalizeRecentSessionReadOptions(opts);
   if (maxMessages === 0) {
     return [];
   }
@@ -282,7 +285,7 @@ export function readRecentSessionMessages(
         .filter((line) => line.trim().length > 0)
         .slice(-maxLines);
 
-      return parseRecentTranscriptTailMessages(lines, maxMessages);
+      return parseRecentTranscriptTailMessages(lines, maxMessages, view);
     }) ?? []
   );
 }
@@ -482,14 +485,21 @@ function transcriptRecordsToMessages(records: TailTranscriptRecord[]): unknown[]
   return messages;
 }
 
-function parseRecentTranscriptTailMessages(lines: string[], maxMessages: number): unknown[] {
+function parseRecentTranscriptTailMessages(
+  lines: string[],
+  maxMessages: number,
+  view: "active" | "display" = "active",
+): unknown[] {
   const entries = lines.flatMap((line) => {
     const entry = parseTailTranscriptRecord(line);
     return entry ? [entry] : [];
   });
-  const selected = selectBoundedActiveTailRecords(entries, {
-    failClosedOnInvalidLeafControl: true,
-  });
+  const selected =
+    view === "display"
+      ? selectChatDisplayTranscriptEntries({ entries, recordOf: (entry) => entry.record })
+      : selectBoundedActiveTailRecords(entries, {
+          failClosedOnInvalidLeafControl: true,
+        });
   return transcriptRecordsToMessages(selected).slice(-maxMessages);
 }
 
@@ -783,6 +793,18 @@ async function readRecentSessionMessagesFromPathAsync(
 ): Promise<unknown[]> {
   const { maxMessages } = opts;
 
+  if (opts.view === "display") {
+    // Display history can include sessions_yield continuations whose restored
+    // target predates the bounded tail. Use the cached full index so refreshes
+    // do not drop progress turns merely because that target left the window.
+    const index = await readSessionTranscriptIndex(filePath, { view: "display" });
+    return (
+      index?.entries
+        .slice(-maxMessages)
+        .flatMap((entry) => indexedTranscriptEntryToMessages(entry)) ?? []
+    );
+  }
+
   let stat: fs.Stats;
   try {
     stat = await fs.promises.stat(filePath);
@@ -795,7 +817,7 @@ async function readRecentSessionMessagesFromPathAsync(
   const lines = await readRecentTranscriptTailLinesAsync(filePath, stat, {
     ...opts,
   });
-  return parseRecentTranscriptTailMessages(lines, maxMessages);
+  return parseRecentTranscriptTailMessages(lines, maxMessages, opts.view);
 }
 
 export async function readRecentSessionMessagesWithStatsAsync(
@@ -812,11 +834,18 @@ export async function readRecentSessionMessagesWithStatsAsync(
   if (!filePath) {
     return { messages: [], totalMessages: 0 };
   }
-  const totalMessages = await readSessionMessageCountFromPathAsync(filePath);
-  const messages = await readRecentSessionMessagesFromPathAsync(
-    filePath,
-    normalizeRecentSessionReadOptions(opts),
-  );
+  const normalized = normalizeRecentSessionReadOptions(opts);
+  const displayIndex =
+    normalized.view === "display"
+      ? await readSessionTranscriptIndex(filePath, { view: "display" })
+      : undefined;
+  const totalMessages =
+    displayIndex?.entries.length ?? (await readSessionMessageCountFromPathAsync(filePath));
+  const messages =
+    displayIndex?.entries
+      .slice(-normalized.maxMessages)
+      .flatMap((entry) => indexedTranscriptEntryToMessages(entry)) ??
+    (await readRecentSessionMessagesFromPathAsync(filePath, normalized));
   const firstSeq = Math.max(1, totalMessages - messages.length + 1);
   const messagesWithSeq = messages.map((message, index) =>
     attachOpenClawTranscriptMeta(message, { seq: firstSeq + index }),
@@ -838,7 +867,9 @@ export async function readSessionMessagesPageWithStatsAsync(
   if (!filePath) {
     return { messages: [], totalMessages: 0 };
   }
-  const index = await readSessionTranscriptIndex(filePath);
+  const index = await readSessionTranscriptIndex(filePath, {
+    view: opts.view === "display" ? "display" : "active",
+  });
   if (!index) {
     return { messages: [], totalMessages: 0, transcriptPath: filePath };
   }

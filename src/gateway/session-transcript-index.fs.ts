@@ -6,6 +6,7 @@ import {
   parseSessionTranscriptTreeEntry,
   scanSessionTranscriptTree,
 } from "../config/sessions/transcript-tree.js";
+import { selectChatDisplayTranscriptEntries } from "./session-transcript-display.fs.js";
 import {
   extractJsonNullableStringFieldPrefix,
   extractJsonNumberFieldPrefix,
@@ -37,6 +38,7 @@ type SessionTranscriptIndex = {
   hasTreeEntries: boolean;
   leafId?: string | null;
   entries: IndexedTranscriptEntry[];
+  displayEntries: IndexedTranscriptEntry[];
   allEntries: IndexedTranscriptEntry[];
 };
 
@@ -56,7 +58,7 @@ type CacheEntry = {
 
 type ReadSessionTranscriptIndexOptions = {
   cache?: "reuse" | "skip";
-  view?: "active" | "all";
+  view?: "active" | "display" | "all";
 };
 
 const transcriptIndexCache = new Map<string, CacheEntry>();
@@ -96,7 +98,13 @@ function selectTranscriptIndexView(
   index: SessionTranscriptIndex,
   view: ReadSessionTranscriptIndexOptions["view"],
 ): SessionTranscriptIndex {
-  return view === "all" ? { ...index, entries: index.allEntries } : index;
+  if (view === "all") {
+    return { ...index, entries: index.allEntries };
+  }
+  if (view === "display") {
+    return { ...index, entries: index.displayEntries };
+  }
+  return index;
 }
 
 /** Clears transcript index caches and in-flight builds between tests. */
@@ -295,6 +303,10 @@ async function buildSessionTranscriptIndex(
   const activeRawEntries = tree.hasExplicitLeafUpdate
     ? buildActiveTreeEntries({ byId, leafId: tree.leafId })
     : rawEntries;
+  const displayRawEntries = selectChatDisplayTranscriptEntries({
+    entries: rawEntries,
+    recordOf: (entry) => entry.record,
+  });
   return {
     filePath,
     mtimeMs: stat.mtimeMs,
@@ -302,6 +314,7 @@ async function buildSessionTranscriptIndex(
     hasTreeEntries: tree.hasExplicitLeafUpdate,
     ...(tree.hasExplicitLeafUpdate ? { leafId: tree.leafId } : {}),
     entries: toIndexedEntries(activeRawEntries),
+    displayEntries: toIndexedEntries(displayRawEntries),
     allEntries: toIndexedEntries(rawEntries),
   };
 }
